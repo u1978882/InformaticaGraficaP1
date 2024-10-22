@@ -6,6 +6,8 @@ var cols, rows;
 var hueValue = 100;
 var mouseDown = false;
 var solid = false;
+var randIndexes
+var selectedShape = "none"
 const colorPicker = document.getElementById('colorPicker');
 const rainbowInput = document.getElementById('rainbow');
 const removeInput = document.getElementById('remove');
@@ -14,13 +16,59 @@ const fallingInput = document.getElementById('falling');
 const dotSizeImput = document.getElementById('dotSize');
 const solidInput = document.getElementById('solid');
 
+var colorOut
 var currentColor = hexToHue(colorPicker.value)
 var rainbow = false
 var remove = false
 var falling = true
+
+var square = {
+    "vertices": [
+        -0.1, -0.1, 0,
+        0.1, -0.1, 0,
+        0.1,  0.1, 0,
+        -0.1,  0.1, 0
+    ],
+    "indices": [0, 1, 2, 0, 2, 3],
+    "x": 0,
+    "y": 0
+};
+
+var circle = createCircle(0.12, 60);
+
+function createCircle(radius, segments) {
+    const vertices = [];
+    const indices = [];
+    
+    for (let i = 0; i <= segments; i++) {
+        const angle = (i / segments) * 2 * Math.PI;
+        const x = radius * Math.cos(angle);
+        const y = radius * Math.sin(angle);
+        vertices.push(x, y, 0);
+    }
+
+    for (let i = 0; i < segments; i++) {
+        indices.push(0, i + 1, i + 2);
+    }
+
+    return {
+        "vertices": vertices,
+        "indices": indices,
+        "x": 0,
+        "y": 0
+    };
+}
+
+
 colorPicker.addEventListener('input', (event) => {
     colorValue.textContent = event.target.value;
     currentColor = hexToHue(colorPicker.value)
+    document.querySelectorAll('.shape').forEach(shape => {
+        var [r, g, b] = hueToRgb(currentColor);
+
+        shape.style.backgroundColor = `rgb(${r * 255}, ${g * 255}, ${b * 255})`
+    });
+    //document.getElementById('triangle').style.borderBottom = "100px solid blue"
 });
 
 fallingInput.addEventListener('change', (event) => {
@@ -116,6 +164,7 @@ function withinBounds(i, j) {
 
 function getWebGLContext() {
     var canvas = document.getElementById("myCanvas");
+
     return canvas.getContext("webgl2");
 }
 
@@ -128,10 +177,11 @@ function initWebGL() {
     }
 
     initShaders();
+    initBuffers(square);
+    initBuffers(circle);
     initRendering();
 
-
-    
+    randIndexes = shuffleArray(createArray(cols))
     cols = Math.floor(600 / w);
     rows = Math.floor(600 / w);
     grid = make2DArray(cols, rows);
@@ -141,15 +191,60 @@ function initWebGL() {
     canvas.addEventListener('mousedown', () => mouseDown = true);
     canvas.addEventListener('mouseup', () => mouseDown = false);
     canvas.addEventListener('mousemove', onMouseMove);
+    
     requestAnimationFrame(drawScene);
 }
 
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
+
+function draw(model) {
+    const translatedVertices = new Float32Array(model.vertices.length);
+
+    for (let i = 0; i < model.vertices.length; i += 3) {
+        translatedVertices[i] = model.vertices[i] + model.x;
+        translatedVertices[i + 1] = model.vertices[i + 1] + model.y;
+        translatedVertices[i + 2] = model.vertices[i + 2];
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, model.idBufferVertices);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, translatedVertices);
+
+    gl.vertexAttribPointer(model.vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(model.vertexPositionAttribute);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, model.idBufferIndices);
+    gl.drawElements(gl.TRIANGLES, model.indices.length, gl.UNSIGNED_SHORT, 0);
+}
+
+function createArray(n) {
+    const arr = [];
+    for (let i = 0; i <= n; i++) {
+        arr.push(i);
+    }
+    return arr;
+}
 
 
 function onMouseMove(event) {
-    if (!mouseDown) return;
-
     let rect = event.target.getBoundingClientRect();
+
+    if(selectedShape === "square" || selectedShape === "circle"){
+        var canvas = document.getElementById("myCanvas");
+        var x = (event.clientX - rect.left) / canvas.width * 2 - 1;
+        var y = (event.clientY - rect.top) / canvas.height * -2 + 1;
+        square.x = x;
+        square.y = y;
+        circle.x = x;
+        circle.y = y;
+    }
+    if (!mouseDown) return
+
     let mouseX = event.clientX - rect.left;
     let mouseY = event.clientY - rect.top;
 
@@ -157,54 +252,94 @@ function onMouseMove(event) {
     let mouseRow = Math.floor(mouseY / w);
 
     let matrix = dotSize;
-    let extent = Math.floor(matrix / 2);
+    if (selectedShape == "circle") {
 
-    for (let i = -extent; i <= extent; i++) {
-        for (let j = -extent; j <= extent; j++) {
-            let col = mouseCol + i;
-            let row = mouseRow + j;
-            if (withinBounds(col, row)) {
-                if (solid) {
-                    grid[col][row] = -1;
-                } else {
-                    if (remove)
-                        grid[col][row] = 0;
-                    else
-                        grid[col][row] = rainbow ? hueValue : currentColor;
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+                const distance = Math.sqrt(Math.pow(row - mouseRow, 2) + Math.pow(col - mouseCol, 2));
+                if (distance <= 7) {
+                    if (withinBounds(col, row)) {
+                        if (solid) {
+                            grid[col][row] = -1;
+                        } else {
+                            if (remove)
+                                grid[col][row] = 0;
+                            else
+                                grid[col][row] = rainbow ? hueValue : currentColor;
+                        }
+                    }
+                }
+            }
+        }
+        
+
+    } else {
+        let extent = Math.floor(matrix / 2);
+        if (selectedShape == "square") {
+            extent = 6
+        }
+    
+        for (let i = -extent; i <= extent; i++) {
+            for (let j = -extent; j <= extent; j++) {
+                let col = mouseCol + i;
+                let row = mouseRow + j;
+                if (withinBounds(col, row)) {
+                    if (solid) {
+                        grid[col][row] = -1;
+                    } else {
+                        if (remove)
+                            grid[col][row] = 0;
+                        else
+                            grid[col][row] = rainbow ? hueValue : currentColor;
+                    }
                 }
             }
         }
     }
 
+
     hueValue = (hueValue + 1) % 360;
+    
 }
 
 function initShaders() {
     var vertexShader = gl.createShader(gl.VERTEX_SHADER);
     gl.shaderSource(vertexShader, document.getElementById("myVertexShader").text);
     gl.compileShader(vertexShader);
-    if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
-        alert(gl.getShaderInfoLog(vertexShader));
-        return null;
-    }
-
+  
     var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
     gl.shaderSource(fragmentShader, document.getElementById("myFragmentShader").text);
     gl.compileShader(fragmentShader);
-    if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
-        alert(gl.getShaderInfoLog(fragmentShader));
-        return null;
-    }
-
+  
     program = gl.createProgram();
     gl.attachShader(program, vertexShader);
     gl.attachShader(program, fragmentShader);
     gl.linkProgram(program);
     gl.useProgram(program);
+
+    //shapeColor = gl.getUniformLocation(program, "shapeColor" );
+
+    colorOut = gl.getUniformLocation(program, "colorOut");
+  
+    program.vertexPositionAttribute = gl.getAttribLocation(program, "VertexPosition");
+    gl.enableVertexAttribArray(program.vertexPositionAttribute);
+    program.uTranslation = gl.getUniformLocation(program, "uTranslation");
+
+
 }
 
 function initRendering() {
     gl.clearColor(0.1, 0.1, 0.1, 0.1);
+}
+
+function initBuffers(model) {
+    model.idBufferVertices = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, model.idBufferVertices);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(model.vertices), gl.STATIC_DRAW);
+    
+    model.idBufferIndices = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, model.idBufferIndices);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(model.indices), gl.STATIC_DRAW);
 }
 
 function drawGrid() {
@@ -246,10 +381,12 @@ function hueToRgb(hue) {
 }
 
 function drawCell(i, j, hue) {
-    let x = i * w / 300 - 1;
-    let y = 1 - j * w / 300;
-    let vertices
+    let x = (i * w / 300 - 1) // Use model.x
+    let y = (1 - j * w / 300)
+    
+    let vertices;
 
+    // Create vertex data
     if (hue == -1) {
         vertices = new Float32Array([
             x, y, 0.0, 255, 255, 255, 0, 
@@ -259,7 +396,6 @@ function drawCell(i, j, hue) {
         ]);
     } else {
         const [r, g, b] = hueToRgb(hue);
-
         vertices = new Float32Array([
             x, y, 0.0, r, g, b, 0, 
             x + w / 300, y, 0.0, r, g, b, 0, 
@@ -268,33 +404,36 @@ function drawCell(i, j, hue) {
         ]);
     }
 
-  
+
+
     var vertexBuffer = gl.createBuffer();
+
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-  
+
     var position = gl.getAttribLocation(program, "VertexPosition");
     gl.vertexAttribPointer(position, 3, gl.FLOAT, false, 7 * 4, 0);
     gl.enableVertexAttribArray(position);
-  
+
     var color = gl.getAttribLocation(program, "VertexColor");
     gl.vertexAttribPointer(color, 4, gl.FLOAT, false, 7 * 4, 3 * 4);
     gl.enableVertexAttribArray(color);
-  
+
+    // Draw cells without any translation
     gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
-  }
+}
+
 
 function updateGrid() {
     if (!falling) {
         return
     }
-    for (let i = cols - 1; i > 0; i--) {
-        for (let j = rows - 1; j > 0 ; j--) {
+    for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
             let state = grid[i][j];
 
             if (state > 0) {
                 let below = grid[i][j + 1];
-
                 let dir = Math.random() < 0.5 ? -1 : 1;
                 
                 
@@ -307,12 +446,13 @@ function updateGrid() {
                     belowB = grid[i - dir][j + 1];
                 }
                 
-                if (below == 0) {
+
+                if (below == 0) { // TODO: Mirar adjacents i fer random
                     nextGrid[i][j + 1] = state;
-                } else if (belowA == 0) {
-                    nextGrid[i + dir][j + 1] = state;
                 } else if (belowB == 0) {
                     nextGrid[i - dir][j + 1] = state;
+                } else if (belowA == 0) {
+                    nextGrid[i + dir][j + 1] = state;
                 } else {
                     nextGrid[i][j] = state;
                 }
@@ -321,19 +461,46 @@ function updateGrid() {
             }
         }
     }
-
     grid = nextGrid;
     nextGrid = make2DArray(cols, rows);
 }
 
 
 
-
+let running = true
 function drawScene() {
     gl.clear(gl.COLOR_BUFFER_BIT);
-    drawGrid();
+
+    if (running) {
+        drawGrid();
+    }
+
+    if (selectedShape == "square") {
+
+        draw(square);
+
+    } else if (selectedShape == "circle") {
+
+        draw(circle);
+    }
+
     updateGrid();
+
+
     requestAnimationFrame(drawScene);
 }
 
 initWebGL();
+
+
+function showShape() {
+    document.querySelectorAll('.shape').forEach(shape => {
+        shape.style.display = 'none';
+    });
+
+    selectedShape = document.querySelector('input[name="shape"]:checked').value;
+
+    if (selectedShape !== 'none') {
+        document.getElementById(selectedShape).style.display = 'block';
+    }
+}

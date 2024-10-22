@@ -20,22 +20,33 @@
     <script id="myVertexShader" type="x-shader/x-vertex">#version 300 es
         in vec3 VertexPosition;
         in vec4 VertexColor;
+        in vec4 VertexColor2;
         out vec4 colorOut;
+        out vec4 colorOut2;
+        uniform vec2 uTranslation;
+
+
 
         void main() {
             colorOut = VertexColor;
-            gl_Position = vec4(VertexPosition, 1.0);
+            //gl_Position = vec4(VertexPosition, 1.0);
+            gl_Position = vec4(VertexPosition.xy, VertexPosition.z, 1.0);
+
         }
     </script>
     <script id="myFragmentShader" type="x-shader/x-fragment">#version 300 es
         precision mediump float;
+
         in vec4 colorOut;
         out vec4 fragmentColor;
-
+        
+        uniform vec4 uColor;
+        
         void main() {
             fragmentColor = colorOut;
         }
     </script>
+    
 </head>
 
 <body>
@@ -68,6 +79,20 @@
 
             <input style="width: 30px; margin-right: 7px;" type="number" min="1" max="10" step="1" id="dotSize" value="5">
             <label for="dotSize"> Size </label>
+
+            <hr>
+            <h2>Select a Shape</h2>
+            <label><input type="radio" name="shape" value="circle" onclick="showShape()"> Circle</label>
+            <label><input type="radio" name="shape" value="square" onclick="showShape()"> Square</label>
+            <label><input type="radio" name="shape" value="none" onclick="showShape()" checked> None</label>
+        
+            <br>
+            <br>
+
+            <div id="shape-container">
+                <div id="circle" class="shape circle"></div>
+                <div id="square" class="shape square"></div>
+            </div>
 
         </div>
     </div>
@@ -201,6 +226,35 @@
     .checkbox-wrapper-14 *:before,
     .checkbox-wrapper-14 *:after {
         box-sizing: inherit;
+    }
+
+    .shape {
+        display: none;
+    }
+
+    #circle:checked ~ .circle,
+    #square:checked ~ .square,
+    #triangle:checked ~ .triangle {
+        display: block;
+    }
+
+    .circle {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        background-color: #fbff00;
+    }
+
+    .square {
+        width: 100px;
+        height: 100px;
+        background-color: #fbff00;
+    }
+
+    #shape-container{
+        display: flex;
+        justify-content: center;
+        align-items: center;
     }
 
 </style>
